@@ -31,7 +31,7 @@ use crate::const_eval::error_to_const_error;
 use crate::interpret::{
     self, intern_const_alloc_recursive, AllocId, Allocation, Frame, ImmTy, Immediate, InternKind,
     InterpCx, LocalState, LocalValue, Memory, MemoryKind, OpTy, Operand as InterpOperand, PlaceTy,
-    Pointer, ScalarMaybeUndef, StackPopCleanup,
+    Pointer, ScalarMaybeUninit, StackPopCleanup,
 };
 use crate::transform::{MirPass, MirSource};
 
@@ -687,7 +687,7 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
 
         if let Some(Ok(imm)) = imm {
             match *imm {
-                interpret::Immediate::Scalar(ScalarMaybeUndef::Scalar(scalar)) => {
+                interpret::Immediate::Scalar(ScalarMaybeUninit::Scalar(scalar)) => {
                     *rval = Rvalue::Use(self.operand_from_scalar(
                         scalar,
                         value.layout.ty,
@@ -695,8 +695,8 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
                     ));
                 }
                 Immediate::ScalarPair(
-                    ScalarMaybeUndef::Scalar(one),
-                    ScalarMaybeUndef::Scalar(two),
+                    ScalarMaybeUninit::Scalar(one),
+                    ScalarMaybeUninit::Scalar(two),
                 ) => {
                     // Found a value represented as a pair. For now only do cont-prop if type of
                     // Rvalue is also a pair with two scalars. The more general case is more
@@ -745,12 +745,12 @@ impl<'mir, 'tcx> ConstPropagator<'mir, 'tcx> {
         }
 
         match *op {
-            interpret::Operand::Immediate(Immediate::Scalar(ScalarMaybeUndef::Scalar(s))) => {
+            interpret::Operand::Immediate(Immediate::Scalar(ScalarMaybeUninit::Scalar(s))) => {
                 s.is_bits()
             }
             interpret::Operand::Immediate(Immediate::ScalarPair(
-                ScalarMaybeUndef::Scalar(l),
-                ScalarMaybeUndef::Scalar(r),
+                ScalarMaybeUninit::Scalar(l),
+                ScalarMaybeUninit::Scalar(r),
             )) => l.is_bits() && r.is_bits(),
             interpret::Operand::Indirect(_) if mir_opt_level >= 2 => {
                 let mplace = op.assert_mem_place(&self.ecx);
@@ -907,7 +907,7 @@ impl<'mir, 'tcx> MutVisitor<'tcx> for ConstPropagator<'mir, 'tcx> {
             TerminatorKind::Assert { expected, ref msg, ref mut cond, .. } => {
                 if let Some(value) = self.eval_operand(&cond, source_info) {
                     trace!("assertion on {:?} should be {:?}", value, expected);
-                    let expected = ScalarMaybeUndef::from(Scalar::from_bool(*expected));
+                    let expected = ScalarMaybeUninit::from(Scalar::from_bool(*expected));
                     let value_const = self.ecx.read_scalar(value).unwrap();
                     if expected != value_const {
                         // poison all places this operand references so that further code
@@ -954,7 +954,7 @@ impl<'mir, 'tcx> MutVisitor<'tcx> for ConstPropagator<'mir, 'tcx> {
                         );
                     } else {
                         if self.should_const_prop(value) {
-                            if let ScalarMaybeUndef::Scalar(scalar) = value_const {
+                            if let ScalarMaybeUninit::Scalar(scalar) = value_const {
                                 *cond = self.operand_from_scalar(
                                     scalar,
                                     self.tcx.types.bool,
@@ -968,7 +968,7 @@ impl<'mir, 'tcx> MutVisitor<'tcx> for ConstPropagator<'mir, 'tcx> {
             TerminatorKind::SwitchInt { ref mut discr, switch_ty, .. } => {
                 if let Some(value) = self.eval_operand(&discr, source_info) {
                     if self.should_const_prop(value) {
-                        if let ScalarMaybeUndef::Scalar(scalar) =
+                        if let ScalarMaybeUninit::Scalar(scalar) =
                             self.ecx.read_scalar(value).unwrap()
                         {
                             *discr = self.operand_from_scalar(scalar, switch_ty, source_info.span);

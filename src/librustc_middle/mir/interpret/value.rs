@@ -535,60 +535,60 @@ impl<Tag> From<Pointer<Tag>> for Scalar<Tag> {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, RustcEncodable, RustcDecodable, HashStable, Hash)]
-pub enum ScalarMaybeUndef<Tag = (), Id = AllocId> {
+pub enum ScalarMaybeUninit<Tag = (), Id = AllocId> {
     Scalar(Scalar<Tag, Id>),
     Undef,
 }
 
-impl<Tag> From<Scalar<Tag>> for ScalarMaybeUndef<Tag> {
+impl<Tag> From<Scalar<Tag>> for ScalarMaybeUninit<Tag> {
     #[inline(always)]
     fn from(s: Scalar<Tag>) -> Self {
-        ScalarMaybeUndef::Scalar(s)
+        ScalarMaybeUninit::Scalar(s)
     }
 }
 
-impl<Tag> From<Pointer<Tag>> for ScalarMaybeUndef<Tag> {
+impl<Tag> From<Pointer<Tag>> for ScalarMaybeUninit<Tag> {
     #[inline(always)]
     fn from(s: Pointer<Tag>) -> Self {
-        ScalarMaybeUndef::Scalar(s.into())
+        ScalarMaybeUninit::Scalar(s.into())
     }
 }
 
-impl<Tag: fmt::Debug, Id: fmt::Debug> fmt::Debug for ScalarMaybeUndef<Tag, Id> {
+impl<Tag: fmt::Debug, Id: fmt::Debug> fmt::Debug for ScalarMaybeUninit<Tag, Id> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ScalarMaybeUndef::Undef => write!(f, "Undef"),
-            ScalarMaybeUndef::Scalar(s) => write!(f, "{:?}", s),
+            ScalarMaybeUninit::Undef => write!(f, "Undef"),
+            ScalarMaybeUninit::Scalar(s) => write!(f, "{:?}", s),
         }
     }
 }
 
-impl<Tag> fmt::Display for ScalarMaybeUndef<Tag> {
+impl<Tag> fmt::Display for ScalarMaybeUninit<Tag> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ScalarMaybeUndef::Undef => write!(f, "uninitialized bytes"),
-            ScalarMaybeUndef::Scalar(s) => write!(f, "{}", s),
+            ScalarMaybeUninit::Undef => write!(f, "uninitialized bytes"),
+            ScalarMaybeUninit::Scalar(s) => write!(f, "{}", s),
         }
     }
 }
 
-impl<'tcx, Tag> ScalarMaybeUndef<Tag> {
+impl<'tcx, Tag> ScalarMaybeUninit<Tag> {
     /// Erase the tag from the scalar, if any.
     ///
     /// Used by error reporting code to avoid having the error type depend on `Tag`.
     #[inline]
-    pub fn erase_tag(self) -> ScalarMaybeUndef {
+    pub fn erase_tag(self) -> ScalarMaybeUninit {
         match self {
-            ScalarMaybeUndef::Scalar(s) => ScalarMaybeUndef::Scalar(s.erase_tag()),
-            ScalarMaybeUndef::Undef => ScalarMaybeUndef::Undef,
+            ScalarMaybeUninit::Scalar(s) => ScalarMaybeUninit::Scalar(s.erase_tag()),
+            ScalarMaybeUninit::Undef => ScalarMaybeUninit::Undef,
         }
     }
 
     #[inline]
     pub fn not_undef(self) -> InterpResult<'static, Scalar<Tag>> {
         match self {
-            ScalarMaybeUndef::Scalar(scalar) => Ok(scalar),
-            ScalarMaybeUndef::Undef => throw_ub!(InvalidUndefBytes(None)),
+            ScalarMaybeUninit::Scalar(scalar) => Ok(scalar),
+            ScalarMaybeUninit::Undef => throw_ub!(InvalidUninitBytes(None)),
         }
     }
 

@@ -782,7 +782,7 @@ impl<'rt, 'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> ValueVisitor<'mir, 'tcx, M>
                     Err(err) => {
                         // For some errors we might be able to provide extra information
                         match err.kind {
-                            err_ub!(InvalidUndefBytes(Some(ptr))) => {
+                            err_ub!(InvalidUninitBytes(Some(ptr))) => {
                                 // Some byte was uninitialized, determine which
                                 // element that byte belongs to so we can
                                 // provide an index.

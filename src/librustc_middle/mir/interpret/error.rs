@@ -1,4 +1,4 @@
-use super::{AllocId, CheckInAllocMsg, Pointer, RawConst, ScalarMaybeUndef};
+use super::{AllocId, CheckInAllocMsg, Pointer, RawConst, ScalarMaybeUninit};
 
 use crate::mir::interpret::ConstValue;
 use crate::ty::layout::LayoutError;
@@ -312,7 +312,7 @@ pub enum UndefinedBehaviorInfo {
     /// Unreachable code was executed.
     Unreachable,
     /// An enum discriminant was set to a value which was outside the range of valid values.
-    InvalidDiscriminant(ScalarMaybeUndef),
+    InvalidDiscriminant(ScalarMaybeUninit),
     /// A slice/array index projection went out-of-bounds.
     BoundsCheckFailed {
         len: u64,
@@ -358,7 +358,7 @@ pub enum UndefinedBehaviorInfo {
     /// Using a non-character `u32` as character.
     InvalidChar(u32),
     /// Using uninitialized data where it is not allowed.
-    InvalidUndefBytes(Option<Pointer>),
+    InvalidUninitBytes(Option<Pointer>),
     /// Working with a local that is not currently live.
     DeadLocal,
     /// Trying to read from the return place of a function.
@@ -414,12 +414,12 @@ impl fmt::Debug for UndefinedBehaviorInfo {
             ValidationFailure(ref err) => write!(f, "type validation failed: {}", err),
             InvalidBool(b) => write!(f, "interpreting an invalid 8-bit value as a bool: {}", b),
             InvalidChar(c) => write!(f, "interpreting an invalid 32-bit value as a char: {}", c),
-            InvalidUndefBytes(Some(p)) => write!(
+            InvalidUninitBytes(Some(p)) => write!(
                 f,
                 "reading uninitialized memory at {:?}, but this operation requires initialized memory",
                 p
             ),
-            InvalidUndefBytes(None) => write!(
+            InvalidUninitBytes(None) => write!(
                 f,
                 "using uninitialized data, but this operation requires initialized memory"
             ),

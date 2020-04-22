@@ -10,7 +10,7 @@ use rustc_data_structures::sorted_map::SortedMap;
 use rustc_target::abi::{Align, HasDataLayout, Size};
 
 use super::{
-    read_target_uint, write_target_uint, AllocId, InterpResult, Pointer, Scalar, ScalarMaybeUndef,
+    read_target_uint, write_target_uint, AllocId, InterpResult, Pointer, Scalar, ScalarMaybeUninit,
 };
 
 // NOTE: When adding new fields, make sure to adjust the `Snapshot` impl in
@@ -27,7 +27,7 @@ pub struct Allocation<Tag = (), Extra = ()> {
     /// at the given offset.
     relocations: Relocations<Tag>,
     /// Denotes which part of this allocation is initialized.
-    undef_mask: UndefMask,
+    undef_mask: UninitMask,
     /// The size of the allocation. Currently, must always equal `bytes.len()`.
     pub size: Size,
     /// The alignment of the allocation to detect unaligned reads.
@@ -94,7 +94,7 @@ impl<Tag> Allocation<Tag> {
         Self {
             bytes,
             relocations: Relocations::new(),
-            undef_mask: UndefMask::new(size, true),
+            undef_mask: UninitMask::new(size, true),
             size,
             align,
             mutability: Mutability::Not,
@@ -110,7 +110,7 @@ impl<Tag> Allocation<Tag> {
         Allocation {
             bytes: vec![0; size.bytes_usize()],
             relocations: Relocations::new(),
-            undef_mask: UndefMask::new(size, false),
+            undef_mask: UninitMask::new(size, false),
             size,
             align,
             mutability: Mutability::Mut,
@@ -163,7 +163,7 @@ impl<Tag, Extra> Allocation<Tag, Extra> {
     }
 
     /// Returns the undef mask.
-    pub fn undef_mask(&self) -> &UndefMask {
+    pub fn undef_mask(&self) -> &UninitMask {
         &self.undef_mask
     }
 
@@ -360,7 +360,7 @@ impl<'tcx, Tag: Copy, Extra: AllocationExtra<Tag>> Allocation<Tag, Extra> {
         cx: &impl HasDataLayout,
         ptr: Pointer<Tag>,
         size: Size,
-    ) -> InterpResult<'tcx, ScalarMaybeUndef<Tag>> {
+    ) -> InterpResult<'tcx, ScalarMaybeUninit<Tag>> {
         // `get_bytes_unchecked` tests relocation edges.
         let bytes = self.get_bytes_with_undef_and_ptr(cx, ptr, size)?;
         // Undef check happens *after* we established that the alignment is correct.
@@ -368,7 +368,7 @@ impl<'tcx, Tag: Copy, Extra: AllocationExtra<Tag>> Allocation<Tag, Extra> {
         if self.is_defined(ptr, size).is_err() {
             // This inflates undefined bytes to the entire scalar, even if only a few
             // bytes are undefined.
-            return Ok(ScalarMaybeUndef::Undef);
+            return Ok(ScalarMaybeUninit::Undef);
         }
         // Now we do the actual reading.
         let bits = read_target_uint(cx.data_layout().endian, bytes).unwrap();
@@ -379,11 +379,11 @@ impl<'tcx, Tag: Copy, Extra: AllocationExtra<Tag>> Allocation<Tag, Extra> {
         } else {
             if let Some(&(tag, alloc_id)) = self.relocations.get(&ptr.offset) {
                 let ptr = Pointer::new_with_tag(alloc_id, Size::from_bytes(bits), tag);
-                return Ok(ScalarMaybeUndef::Scalar(ptr.into()));
+                return Ok(ScalarMaybeUninit::Scalar(ptr.into()));
             }
         }
         // We don't. Just return the bits.
-        Ok(ScalarMaybeUndef::Scalar(Scalar::from_uint(bits, size)))
+        Ok(ScalarMaybeUninit::Scalar(Scalar::from_uint(bits, size)))
     }
 
     /// Reads a pointer-sized scalar.
@@ -394,7 +394,7 @@ impl<'tcx, Tag: Copy, Extra: AllocationExtra<Tag>> Allocation<Tag, Extra> {
         &self,
         cx: &impl HasDataLayout,
         ptr: Pointer<Tag>,
-    ) -> InterpResult<'tcx, ScalarMaybeUndef<Tag>> {
+    ) -> InterpResult<'tcx, ScalarMaybeUninit<Tag>> {
         self.read_scalar(cx, ptr, cx.data_layout().pointer_size)
     }
 
@@ -411,12 +411,12 @@ impl<'tcx, Tag: Copy, Extra: AllocationExtra<Tag>> Allocation<Tag, Extra> {
         &mut self,
         cx: &impl HasDataLayout,
         ptr: Pointer<Tag>,
-        val: ScalarMaybeUndef<Tag>,
+        val: ScalarMaybeUninit<Tag>,
         type_size: Size,
     ) -> InterpResult<'tcx> {
         let val = match val {
-            ScalarMaybeUndef::Scalar(scalar) => scalar,
-            ScalarMaybeUndef::Undef => {
+            ScalarMaybeUninit::Scalar(scalar) => scalar,
+            ScalarMaybeUninit::Undef => {
                 self.mark_definedness(ptr, type_size, false);
                 return Ok(());
             }
@@ -447,7 +447,7 @@ impl<'tcx, Tag: Copy, Extra: AllocationExtra<Tag>> Allocation<Tag, Extra> {
         &mut self,
         cx: &impl HasDataLayout,
         ptr: Pointer<Tag>,
-        val: ScalarMaybeUndef<Tag>,
+        val: ScalarMaybeUninit<Tag>,
     ) -> InterpResult<'tcx> {
         let ptr_size = cx.data_layout().pointer_size;
         self.write_scalar(cx, ptr, val, ptr_size)
@@ -557,7 +557,7 @@ impl<'tcx, Tag: Copy, Extra> Allocation<Tag, Extra> {
     /// error which will report the first byte which is undefined.
     fn check_defined(&self, ptr: Pointer<Tag>, size: Size) -> InterpResult<'tcx> {
         self.is_defined(ptr, size)
-            .or_else(|idx| throw_ub!(InvalidUndefBytes(Some(Pointer::new(ptr.alloc_id, idx)))))
+            .or_else(|idx| throw_ub!(InvalidUninitBytes(Some(Pointer::new(ptr.alloc_id, idx)))))
     }
 
     pub fn mark_definedness(&mut self, ptr: Pointer<Tag>, size: Size, new_state: bool) {
@@ -744,16 +744,16 @@ type Block = u64;
 /// is defined. If it is `false` the byte is undefined.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, RustcEncodable, RustcDecodable)]
 #[derive(HashStable)]
-pub struct UndefMask {
+pub struct UninitMask {
     blocks: Vec<Block>,
     len: Size,
 }
 
-impl UndefMask {
+impl UninitMask {
     pub const BLOCK_SIZE: u64 = 64;
 
     pub fn new(size: Size, state: bool) -> Self {
-        let mut m = UndefMask { blocks: vec![], len: Size::ZERO };
+        let mut m = UninitMask { blocks: vec![], len: Size::ZERO };
         m.grow(size, state);
         m
     }
@@ -872,7 +872,7 @@ impl UndefMask {
 #[inline]
 fn bit_index(bits: Size) -> (usize, usize) {
     let bits = bits.bytes();
-    let a = bits / UndefMask::BLOCK_SIZE;
-    let b = bits % UndefMask::BLOCK_SIZE;
+    let a = bits / UninitMask::BLOCK_SIZE;
+    let b = bits % UninitMask::BLOCK_SIZE;
     (usize::try_from(a).unwrap(), usize::try_from(b).unwrap())
 }

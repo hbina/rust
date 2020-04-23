@@ -27,7 +27,7 @@ pub struct Allocation<Tag = (), Extra = ()> {
     /// at the given offset.
     relocations: Relocations<Tag>,
     /// Denotes which part of this allocation is initialized.
-    undef_mask: UninitMask,
+    uninit_mask: UninitMask,
     /// The size of the allocation. Currently, must always equal `bytes.len()`.
     pub size: Size,
     /// The alignment of the allocation to detect unaligned reads.
@@ -94,7 +94,7 @@ impl<Tag> Allocation<Tag> {
         Self {
             bytes,
             relocations: Relocations::new(),
-            undef_mask: UninitMask::new(size, true),
+            uninit_mask: UninitMask::new(size, true),
             size,
             align,
             mutability: Mutability::Not,
@@ -110,7 +110,7 @@ impl<Tag> Allocation<Tag> {
         Allocation {
             bytes: vec![0; size.bytes_usize()],
             relocations: Relocations::new(),
-            undef_mask: UninitMask::new(size, false),
+            uninit_mask: UninitMask::new(size, false),
             size,
             align,
             mutability: Mutability::Mut,
@@ -140,7 +140,7 @@ impl Allocation<(), ()> {
                     })
                     .collect(),
             ),
-            undef_mask: self.undef_mask,
+            uninit_mask: self.uninit_mask,
             align: self.align,
             mutability: self.mutability,
             extra,
@@ -163,8 +163,8 @@ impl<Tag, Extra> Allocation<Tag, Extra> {
     }
 
     /// Returns the undef mask.
-    pub fn undef_mask(&self) -> &UninitMask {
-        &self.undef_mask
+    pub fn uninit_mask(&self) -> &UninitMask {
+        &self.uninit_mask
     }
 
     /// Returns the relocation list.
@@ -363,12 +363,12 @@ impl<'tcx, Tag: Copy, Extra: AllocationExtra<Tag>> Allocation<Tag, Extra> {
     ) -> InterpResult<'tcx, ScalarMaybeUninit<Tag>> {
         // `get_bytes_unchecked` tests relocation edges.
         let bytes = self.get_bytes_with_undef_and_ptr(cx, ptr, size)?;
-        // Undef check happens *after* we established that the alignment is correct.
+        // Uninit check happens *after* we established that the alignment is correct.
         // We must not return `Ok()` for unaligned pointers!
         if self.is_defined(ptr, size).is_err() {
-            // This inflates undefined bytes to the entire scalar, even if only a few
-            // bytes are undefined.
-            return Ok(ScalarMaybeUninit::Undef);
+            // This inflates uninitialized bytes to the entire scalar, even if only a few
+            // bytes are uninitialized.
+            return Ok(ScalarMaybeUninit::Uninit);
         }
         // Now we do the actual reading.
         let bits = read_target_uint(cx.data_layout().endian, bytes).unwrap();
@@ -416,7 +416,7 @@ impl<'tcx, Tag: Copy, Extra: AllocationExtra<Tag>> Allocation<Tag, Extra> {
     ) -> InterpResult<'tcx> {
         let val = match val {
             ScalarMaybeUninit::Scalar(scalar) => scalar,
-            ScalarMaybeUninit::Undef => {
+            ScalarMaybeUninit::Uninit => {
                 self.mark_definedness(ptr, type_size, false);
                 return Ok(());
             }
@@ -516,10 +516,10 @@ impl<'tcx, Tag: Copy, Extra> Allocation<Tag, Extra> {
         // Mark parts of the outermost relocations as undefined if they partially fall outside the
         // given range.
         if first < start {
-            self.undef_mask.set_range(first, start, false);
+            self.uninit_mask.set_range(first, start, false);
         }
         if last > end {
-            self.undef_mask.set_range(end, last, false);
+            self.uninit_mask.set_range(end, last, false);
         }
 
         // Forget all the relocations.
@@ -550,7 +550,7 @@ impl<'tcx, Tag: Copy, Extra> Allocation<Tag, Extra> {
     /// Returns `Ok(())` if it's defined. Otherwise returns the index of the byte
     /// at which the first undefined access begins.
     fn is_defined(&self, ptr: Pointer<Tag>, size: Size) -> Result<(), Size> {
-        self.undef_mask.is_range_defined(ptr.offset, ptr.offset + size) // `Size` addition
+        self.uninit_mask.is_range_defined(ptr.offset, ptr.offset + size) // `Size` addition
     }
 
     /// Checks that a range of bytes is defined. If not, returns the `ReadUndefBytes`
@@ -564,7 +564,7 @@ impl<'tcx, Tag: Copy, Extra> Allocation<Tag, Extra> {
         if size.bytes() == 0 {
             return;
         }
-        self.undef_mask.set_range(ptr.offset, ptr.offset + size, new_state);
+        self.uninit_mask.set_range(ptr.offset, ptr.offset + size, new_state);
     }
 }
 
@@ -603,13 +603,13 @@ impl<Tag, Extra> Allocation<Tag, Extra> {
         // where each element toggles the state.
 
         let mut ranges = smallvec::SmallVec::<[u64; 1]>::new();
-        let initial = self.undef_mask.get(src.offset);
+        let initial = self.uninit_mask.get(src.offset);
         let mut cur_len = 1;
         let mut cur = initial;
 
         for i in 1..size.bytes() {
             // FIXME: optimize to bitshift the current undef block's bits and read the top bit.
-            if self.undef_mask.get(src.offset + Size::from_bytes(i)) == cur {
+            if self.uninit_mask.get(src.offset + Size::from_bytes(i)) == cur {
                 cur_len += 1;
             } else {
                 ranges.push(cur_len);
@@ -634,7 +634,7 @@ impl<Tag, Extra> Allocation<Tag, Extra> {
         // An optimization where we can just overwrite an entire range of definedness bits if
         // they are going to be uniformly `1` or `0`.
         if defined.ranges.len() <= 1 {
-            self.undef_mask.set_range_inbounds(
+            self.uninit_mask.set_range_inbounds(
                 dest.offset,
                 dest.offset + size * repeat, // `Size` operations
                 defined.initial,
@@ -649,7 +649,7 @@ impl<Tag, Extra> Allocation<Tag, Extra> {
             for range in &defined.ranges {
                 let old_j = j;
                 j += range;
-                self.undef_mask.set_range_inbounds(
+                self.uninit_mask.set_range_inbounds(
                     Size::from_bytes(old_j),
                     Size::from_bytes(j),
                     cur,
@@ -741,7 +741,7 @@ impl<Tag: Copy, Extra> Allocation<Tag, Extra> {
 type Block = u64;
 
 /// A bitmask where each bit refers to the byte with the same index. If the bit is `true`, the byte
-/// is defined. If it is `false` the byte is undefined.
+/// is initialized. If it is `false` the byte is uninitialized.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, RustcEncodable, RustcDecodable)]
 #[derive(HashStable)]
 pub struct UninitMask {
@@ -758,10 +758,10 @@ impl UninitMask {
         m
     }
 
-    /// Checks whether the range `start..end` (end-exclusive) is entirely defined.
+    /// Checks whether the range `start..end` (end-exclusive) is entirely initialized.
     ///
-    /// Returns `Ok(())` if it's defined. Otherwise returns the index of the byte
-    /// at which the first undefined access begins.
+    /// Returns `Ok(())` if it's initialized. Otherwise returns the index of the byte
+    /// at which the first uninitialized access begins.
     #[inline]
     pub fn is_range_defined(&self, start: Size, end: Size) -> Result<(), Size> {
         if end > self.len {

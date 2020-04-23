@@ -767,7 +767,7 @@ fn write_allocation_bytes<Tag, Extra>(
                 ascii.push('╼');
                 i += ptr_size;
             }
-        } else if alloc.undef_mask().is_range_defined(i, i + Size::from_bytes(1)).is_ok() {
+        } else if alloc.uninit_mask().is_range_defined(i, i + Size::from_bytes(1)).is_ok() {
             let j = i.bytes_usize();
 
             // Checked definedness (and thus range) and relocations. This access also doesn't

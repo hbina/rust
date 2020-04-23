@@ -28,7 +28,7 @@ pub struct RawConst<'tcx> {
 pub enum ConstValue<'tcx> {
     /// Used only for types with `layout::abi::Scalar` ABI and ZSTs.
     ///
-    /// Not using the enum `Value` to encode that this must not be `Undef`.
+    /// Not using the enum `Value` to encode that this must not be `Uninit`.
     Scalar(Scalar),
 
     /// Used only for `&[u8]` and `&str`
@@ -537,7 +537,7 @@ impl<Tag> From<Pointer<Tag>> for Scalar<Tag> {
 #[derive(Clone, Copy, Eq, PartialEq, RustcEncodable, RustcDecodable, HashStable, Hash)]
 pub enum ScalarMaybeUninit<Tag = (), Id = AllocId> {
     Scalar(Scalar<Tag, Id>),
-    Undef,
+    Uninit,
 }
 
 impl<Tag> From<Scalar<Tag>> for ScalarMaybeUninit<Tag> {
@@ -557,7 +557,7 @@ impl<Tag> From<Pointer<Tag>> for ScalarMaybeUninit<Tag> {
 impl<Tag: fmt::Debug, Id: fmt::Debug> fmt::Debug for ScalarMaybeUninit<Tag, Id> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ScalarMaybeUninit::Undef => write!(f, "Undef"),
+            ScalarMaybeUninit::Uninit => write!(f, "Uninit"),
             ScalarMaybeUninit::Scalar(s) => write!(f, "{:?}", s),
         }
     }
@@ -566,7 +566,7 @@ impl<Tag: fmt::Debug, Id: fmt::Debug> fmt::Debug for ScalarMaybeUninit<Tag, Id> 
 impl<Tag> fmt::Display for ScalarMaybeUninit<Tag> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ScalarMaybeUninit::Undef => write!(f, "uninitialized bytes"),
+            ScalarMaybeUninit::Uninit => write!(f, "uninitialized bytes"),
             ScalarMaybeUninit::Scalar(s) => write!(f, "{}", s),
         }
     }
@@ -580,7 +580,7 @@ impl<'tcx, Tag> ScalarMaybeUninit<Tag> {
     pub fn erase_tag(self) -> ScalarMaybeUninit {
         match self {
             ScalarMaybeUninit::Scalar(s) => ScalarMaybeUninit::Scalar(s.erase_tag()),
-            ScalarMaybeUninit::Undef => ScalarMaybeUninit::Undef,
+            ScalarMaybeUninit::Uninit => ScalarMaybeUninit::Uninit,
         }
     }
 
@@ -588,7 +588,7 @@ impl<'tcx, Tag> ScalarMaybeUninit<Tag> {
     pub fn not_undef(self) -> InterpResult<'static, Scalar<Tag>> {
         match self {
             ScalarMaybeUninit::Scalar(scalar) => Ok(scalar),
-            ScalarMaybeUninit::Undef => throw_ub!(InvalidUninitBytes(None)),
+            ScalarMaybeUninit::Uninit => throw_ub!(InvalidUninitBytes(None)),
         }
     }
 

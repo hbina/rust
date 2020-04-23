@@ -104,7 +104,7 @@ impl<Tag: Copy> std::fmt::Display for ImmTy<'tcx, Tag> {
                 ScalarMaybeUninit::Scalar(s) => {
                     cx.pretty_print_const_scalar(s.erase_tag(), ty, true)
                 }
-                ScalarMaybeUninit::Undef => cx.typed_value(
+                ScalarMaybeUninit::Uninit => cx.typed_value(
                     |mut this| {
                         this.write_str("{undef ")?;
                         Ok(this)
@@ -646,7 +646,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                 let variants_end = niche_variants.end().as_u32();
                 let raw_discr = raw_discr
                     .not_undef()
-                    .map_err(|_| err_ub!(InvalidDiscriminant(ScalarMaybeUninit::Undef)))?;
+                    .map_err(|_| err_ub!(InvalidDiscriminant(ScalarMaybeUninit::Uninit)))?;
                 match raw_discr.to_bits_or_ptr(discr_val.layout.size, self) {
                     Err(ptr) => {
                         // The niche must be just 0 (which an inbounds pointer value never is)

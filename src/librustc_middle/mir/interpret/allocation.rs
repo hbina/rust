@@ -162,7 +162,7 @@ impl<Tag, Extra> Allocation<Tag, Extra> {
         &self.bytes[range]
     }
 
-    /// Returns the undef mask.
+    /// Returns the uninit mask.
     pub fn uninit_mask(&self) -> &UninitMask {
         &self.uninit_mask
     }
@@ -550,7 +550,7 @@ impl<'tcx, Tag: Copy, Extra> Allocation<Tag, Extra> {
     /// Returns `Ok(())` if it's defined. Otherwise returns the index of the byte
     /// at which the first undefined access begins.
     fn is_defined(&self, ptr: Pointer<Tag>, size: Size) -> Result<(), Size> {
-        self.uninit_mask.is_range_defined(ptr.offset, ptr.offset + size) // `Size` addition
+        self.uninit_mask.is_range_initialized(ptr.offset, ptr.offset + size) // `Size` addition
     }
 
     /// Checks that a range of bytes is defined. If not, returns the `ReadUndefBytes`
@@ -763,7 +763,7 @@ impl UninitMask {
     /// Returns `Ok(())` if it's initialized. Otherwise returns the index of the byte
     /// at which the first uninitialized access begins.
     #[inline]
-    pub fn is_range_defined(&self, start: Size, end: Size) -> Result<(), Size> {
+    pub fn is_range_initialized(&self, start: Size, end: Size) -> Result<(), Size> {
         if end > self.len {
             return Err(self.len);
         }

@@ -11,7 +11,7 @@ use rustc_middle::mir::interpret::UninitMask;
 use rustc_target::abi::Size;
 
 fn main() {
-    let mut mask = Uninit::new(Size::from_bytes(500), false);
+    let mut mask = UninitMask::new(Size::from_bytes(500), false);
     assert!(!mask.get(Size::from_bytes(499)));
     mask.set(Size::from_bytes(499), true);
     assert!(mask.get(Size::from_bytes(499)));

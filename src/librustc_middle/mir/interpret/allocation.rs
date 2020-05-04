@@ -27,7 +27,7 @@ pub struct Allocation<Tag = (), Extra = ()> {
     /// at the given offset.
     relocations: Relocations<Tag>,
     /// Denotes which part of this allocation is initialized.
-    uninit_mask: UninitMask,
+    uninit_mask: InitMask,
     /// The size of the allocation. Currently, must always equal `bytes.len()`.
     pub size: Size,
     /// The alignment of the allocation to detect unaligned reads.
@@ -94,7 +94,7 @@ impl<Tag> Allocation<Tag> {
         Self {
             bytes,
             relocations: Relocations::new(),
-            uninit_mask: UninitMask::new(size, true),
+            uninit_mask: InitMask::new(size, true),
             size,
             align,
             mutability: Mutability::Not,
@@ -110,7 +110,7 @@ impl<Tag> Allocation<Tag> {
         Allocation {
             bytes: vec![0; size.bytes_usize()],
             relocations: Relocations::new(),
-            uninit_mask: UninitMask::new(size, false),
+            uninit_mask: InitMask::new(size, false),
             size,
             align,
             mutability: Mutability::Mut,
@@ -163,7 +163,7 @@ impl<Tag, Extra> Allocation<Tag, Extra> {
     }
 
     /// Returns the uninit mask.
-    pub fn uninit_mask(&self) -> &UninitMask {
+    pub fn uninit_mask(&self) -> &InitMask {
         &self.uninit_mask
     }
 
@@ -744,16 +744,16 @@ type Block = u64;
 /// is initialized. If it is `false` the byte is uninitialized.
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash, RustcEncodable, RustcDecodable)]
 #[derive(HashStable)]
-pub struct UninitMask {
+pub struct InitMask {
     blocks: Vec<Block>,
     len: Size,
 }
 
-impl UninitMask {
+impl InitMask {
     pub const BLOCK_SIZE: u64 = 64;
 
     pub fn new(size: Size, state: bool) -> Self {
-        let mut m = UninitMask { blocks: vec![], len: Size::ZERO };
+        let mut m = InitMask { blocks: vec![], len: Size::ZERO };
         m.grow(size, state);
         m
     }
@@ -872,7 +872,7 @@ impl UninitMask {
 #[inline]
 fn bit_index(bits: Size) -> (usize, usize) {
     let bits = bits.bytes();
-    let a = bits / UninitMask::BLOCK_SIZE;
-    let b = bits % UninitMask::BLOCK_SIZE;
+    let a = bits / InitMask::BLOCK_SIZE;
+    let b = bits % InitMask::BLOCK_SIZE;
     (usize::try_from(a).unwrap(), usize::try_from(b).unwrap())
 }

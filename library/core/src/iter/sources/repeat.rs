@@ -93,11 +93,27 @@ impl<A: Clone> Iterator for Repeat<A> {
     }
 
     fn last(self) -> Option<A> {
-        loop {}
+        Some(self.element.clone())
     }
 
     fn count(self) -> usize {
         loop {}
+    }
+
+    fn any<F>(&mut self, mut f: F) -> bool
+    where
+        Self: Sized,
+        F: FnMut(Self::Item) -> bool,
+    {
+        f(self.element.clone())
+    }
+
+    fn all<F>(&mut self, mut f: F) -> bool
+    where
+        Self: Sized,
+        F: FnMut(Self::Item) -> bool,
+    {
+        f(self.element.clone())
     }
 }
 
